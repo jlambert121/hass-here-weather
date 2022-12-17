@@ -1,10 +1,9 @@
 """The here_weather component."""
-# pyright: reportGeneralTypeIssues=false
 from __future__ import annotations
 
 import copy
-import logging
 from datetime import timedelta
+import logging
 from typing import Any
 
 import aiohere
@@ -14,8 +13,8 @@ from homeassistant.const import (
     CONF_API_KEY,
     CONF_LATITUDE,
     CONF_LONGITUDE,
-    CONF_UNIT_SYSTEM_METRIC,
 )
+from homeassistant.util.unit_system import METRIC_SYSTEM
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -60,7 +59,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
 
-    return unload_ok  # type: ignore
+    return unload_ok
 
 
 class HEREWeatherDataUpdateCoordinator(DataUpdateCoordinator):
@@ -82,24 +81,25 @@ class HEREWeatherDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
 
-    async def _async_update_data(self) -> Any:
+    async def _async_update_data(self) -> list:
         """Perform data update."""
         try:
             async with async_timeout.timeout(10):
-                return await self._get_data()
+                data = await self._get_data()
+                return data
         except aiohere.HereError as error:
             raise UpdateFailed(
                 f"Unable to fetch data from HERE: {error.args[0]}"
             ) from error
 
-    async def _get_data(self) -> Any:
+    async def _get_data(self) -> list[dict[str, str | float]]:
         """Get the latest data from HERE."""
         data = await self.here_client.weather_for_coordinates(
             self.latitude,
             self.longitude,
             self.weather_product_type,
             language=self.language,
-            metric=hass.config.units is METRIC_SYSTEM,
+            metric=self.hass.config.units is METRIC_SYSTEM,
         )
         return extract_data_from_payload_for_product_type(
             data, self.weather_product_type
@@ -108,7 +108,7 @@ class HEREWeatherDataUpdateCoordinator(DataUpdateCoordinator):
 
 def extract_data_from_payload_for_product_type(
     data: dict[str, Any], product_type: aiohere.WeatherProductType
-) -> Any:
+) -> list[dict[str, str | float]]:
     """Extract the actual data from the HERE payload."""
     if product_type == aiohere.WeatherProductType.FORECAST_ASTRONOMY:
         return astronomy_data_with_utc(data["astronomy"]["astronomy"])
@@ -124,7 +124,9 @@ def extract_data_from_payload_for_product_type(
     raise UpdateFailed("Payload malformed")
 
 
-def astronomy_data_with_utc(data: Any) -> Any:
+def astronomy_data_with_utc(
+    data: list[dict[str, str | float]]
+) -> list[dict[str, str | float]]:
     """Amend astronomy data with utc fields."""
     ammended_data = copy.deepcopy(data)
     for element in ammended_data:
